@@ -58,7 +58,7 @@ def assign_all_courts():
     save_json(DATA_FILE, data)
     rerun_app()
 
-def process_court_result(court_index, winning_team):
+def process_court_result(court_index, winning_team, rerun=True):
     court = data["courts"][court_index]
     if len(court) < 4:
         st.warning("Not enough players on this court.")
@@ -100,6 +100,9 @@ def process_court_result(court_index, winning_team):
         "losers": losers
     })
     save_json(DATA_FILE, data)
+    
+    if rerun:
+        rerun_app()
 
 def reset_all_data():
     if DATA_FILE.exists():
@@ -221,11 +224,12 @@ if st.button("Submit All Court Winners"):
         key_name = f"winner_{i}"
         winner = st.session_state.get(key_name, "None")
         if winner in ["Team 1", "Team 2"]:
-            process_court_result(i, winner)
+            process_court_result(i, winner, rerun=False)
             st.session_state[key_name] = "None"
             any_selected = True
     if any_selected:
-        st.success("All selected court results processed!")
+        save_json(DATA_FILE, data)
+        rerun_app()  # Single rerun at the end
     else:
         st.warning("No winners selected for any courts.")
 
