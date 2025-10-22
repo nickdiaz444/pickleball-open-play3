@@ -82,18 +82,16 @@ def process_court_result(court_index, winning_team):
             data["streaks"][w] = 0
             data["queue"].append(w)
 
-    if len(staying) == 2:
-        new_court = [staying[0]]
-        if len(data["queue"]) >= 3:
-            new_court += [data["queue"].pop(0), data["queue"].pop(0), staying[1]]
-        else:
-            new_court += staying
-    else:
-        new_court = []
-
+    # Build new court
+    new_court = staying[:]
+    needed = 4 - len(new_court)
+    for _ in range(needed):
+        if data["queue"]:
+            new_court.append(data["queue"].pop(0))
     # Add losing players to queue
     for l in losers:
-        data["queue"].append(l)
+        if l not in new_court:
+            data["queue"].append(l)
 
     data["courts"][court_index] = new_court
     data["history"].append({
@@ -102,7 +100,6 @@ def process_court_result(court_index, winning_team):
         "losers": losers
     })
     save_json(DATA_FILE, data)
-    rerun_app()
 
 def reset_all_data():
     if DATA_FILE.exists():
@@ -183,13 +180,16 @@ else:
 # ────────────────────────────── DISPLAY COURTS ──────────────────────────────
 st.subheader("🏟️ Courts")
 cols = st.columns(config["num_courts"])
+
 for i, col in enumerate(cols):
     with col:
         st.markdown(f"### Court {i+1}")
-        if not data["courts"][i]:
-            st.info("No game assigned.")
+        court = data["courts"][i]
+        
+        if not court or len(court) < 4:
+            st.info("No game assigned or incomplete court.")
         else:
-            court = data["courts"][i]
+            # Display teams
             st.write(f"**Team 1:** {court[0]} & {court[1]}")
             st.write(f"**Team 2:** {court[2]} & {court[3]}")
 
@@ -205,10 +205,29 @@ for i, col in enumerate(cols):
                 key=f"radio_{i}"
             )
 
+            # Individual court submit button
             if st.button(f"Submit result for Court {i+1}", key=f"submit_{i}"):
                 if st.session_state[key_name] != "None":
                     process_court_result(i, st.session_state[key_name])
                     st.session_state[key_name] = "None"
+                    st.success(f"Court {i+1} result processed!")
+
+# -------------------------
+# Submit All Winners Button
+# -------------------------
+if st.button("Submit All Court Winners"):
+    any_selected = False
+    for i in range(config["num_courts"]):
+        key_name = f"winner_{i}"
+        winner = st.session_state.get(key_name, "None")
+        if winner in ["Team 1", "Team 2"]:
+            process_court_result(i, winner)
+            st.session_state[key_name] = "None"
+            any_selected = True
+    if any_selected:
+        st.success("All selected court results processed!")
+    else:
+        st.warning("No winners selected for any courts.")
 
 # ────────────────────────────── MATCH HISTORY ──────────────────────────────
 st.subheader("📜 Match History")
