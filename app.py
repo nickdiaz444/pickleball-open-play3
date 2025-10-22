@@ -78,7 +78,7 @@ def process_court_result(court_index, winning_team, rerun=True):
     staying = []
     leaving = []
 
-    # Check each winner
+    # Handle winners
     for w in winners:
         streak = data["streaks"].get(w, 0)
         if streak < MAX_STREAK:
@@ -89,16 +89,30 @@ def process_court_result(court_index, winning_team, rerun=True):
             data["queue"].append(w)
             leaving.append(w)
 
-    # All losers leave
+    # Handle losers
     for l in losers:
         data["streaks"][l] = 0
         data["queue"].append(l)
         leaving.append(l)
 
-    # Rebuild court with staying winners + new queue players
-    new_court = staying[:]
-    while len(new_court) < 4 and data["queue"]:
-        new_court.append(data["queue"].pop(0))
+    # Rebuild court with staying winners split
+    new_court = []
+    if len(staying) >= 2:
+        # Split winners
+        new_court = [staying[0]]  # Team 1
+        if len(data["queue"]) >= 2:
+            new_court += [data["queue"].pop(0), data["queue"].pop(0)]
+        else:
+            while len(new_court) < 3 and data["queue"]:
+                new_court.append(data["queue"].pop(0))
+        new_court.append(staying[1])  # Team 2 winner
+    elif len(staying) == 1:
+        new_court = [staying[0]]
+        while len(new_court) < 4 and data["queue"]:
+            new_court.append(data["queue"].pop(0))
+    else:
+        while len(new_court) < 4 and data["queue"]:
+            new_court.append(data["queue"].pop(0))
 
     data["courts"][court_index] = new_court
     data["history"].append({
