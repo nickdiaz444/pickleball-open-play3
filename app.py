@@ -73,40 +73,40 @@ def process_court_result(court_index, winning_team, rerun=True):
     for l in losers:
         data["streaks"][l] = 0
 
-    # Track players leaving and staying
+    # Track staying and leaving players
     staying = []
-    leaving = []
+    leaving_winners = []
+    leaving_losers = []
 
-    # Handle winners
     for w in winners:
         if data["streaks"][w] < 3:
             staying.append(w)
         else:
             data["streaks"][w] = 0
-            leaving.append(w)
+            leaving_winners.append(w)
 
-    # Handle losers
     for l in losers:
-        leaving.append(l)
+        leaving_losers.append(l)
         data["streaks"][l] = 0
 
     # Build new court: split winners into opposing teams
     new_court = []
     if len(staying) == 2:
-        # First winner Team 1, second winner Team 2
         team1_partner = data["queue"].pop(0) if data["queue"] else staying[0]
         team2_partner = data["queue"].pop(0) if data["queue"] else staying[1]
         new_court = [staying[0], team1_partner, team2_partner, staying[1]]
     else:
-        # Fill from queue if fewer than 2 winners
         new_court = staying[:]
         while len(new_court) < 4 and data["queue"]:
             new_court.append(data["queue"].pop(0))
 
-    # Add all leaving players to the end of the queue
-    for p in leaving:
-        if p not in new_court:
-            data["queue"].append(p)
+    # Add leaving losers first, then leaving winners
+    for l in leaving_losers:
+        if l not in new_court:
+            data["queue"].append(l)
+    for w in leaving_winners:
+        if w not in new_court:
+            data["queue"].append(w)
 
     data["courts"][court_index] = new_court
     data["history"].append({
@@ -207,11 +207,9 @@ for i, col in enumerate(cols):
         if not court or len(court) < 4:
             st.info("No game assigned or incomplete court.")
         else:
-            # Display teams
             st.write(f"**Team 1:** {court[0]} & {court[1]}")
             st.write(f"**Team 2:** {court[2]} & {court[3]}")
 
-            # Persist winner selection
             key_name = f"winner_{i}"
             if key_name not in st.session_state:
                 st.session_state[key_name] = "None"
@@ -223,7 +221,6 @@ for i, col in enumerate(cols):
                 key=f"radio_{i}"
             )
 
-            # Individual court submit button
             if st.button(f"Submit result for Court {i+1}", key=f"submit_{i}"):
                 if st.session_state[key_name] != "None":
                     process_court_result(i, st.session_state[key_name])
