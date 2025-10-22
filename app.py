@@ -73,14 +73,22 @@ def process_court_result(court_index, winning_team, rerun=True):
     for l in losers:
         data["streaks"][l] = 0
 
-    # Winners stay on (split), max 2 games
+    # Track players leaving and staying
     staying = []
+    leaving = []
+
+    # Handle winners
     for w in winners:
         if data["streaks"][w] < 3:
             staying.append(w)
         else:
             data["streaks"][w] = 0
-            data["queue"].append(w)
+            leaving.append(w)
+
+    # Handle losers
+    for l in losers:
+        leaving.append(l)
+        data["streaks"][l] = 0
 
     # Build new court: split winners into opposing teams
     new_court = []
@@ -95,10 +103,10 @@ def process_court_result(court_index, winning_team, rerun=True):
         while len(new_court) < 4 and data["queue"]:
             new_court.append(data["queue"].pop(0))
 
-    # Add losing players back to queue if not already on court
-    for l in losers:
-        if l not in new_court:
-            data["queue"].append(l)
+    # Add all leaving players to the end of the queue
+    for p in leaving:
+        if p not in new_court:
+            data["queue"].append(p)
 
     data["courts"][court_index] = new_court
     data["history"].append({
@@ -107,7 +115,7 @@ def process_court_result(court_index, winning_team, rerun=True):
         "losers": losers
     })
     save_json(DATA_FILE, data)
-    
+
     if rerun:
         rerun_app()
 
@@ -195,7 +203,7 @@ for i, col in enumerate(cols):
     with col:
         st.markdown(f"### Court {i+1}")
         court = data["courts"][i]
-        
+
         if not court or len(court) < 4:
             st.info("No game assigned or incomplete court.")
         else:
@@ -236,7 +244,7 @@ if st.button("Submit All Court Winners"):
             any_selected = True
     if any_selected:
         save_json(DATA_FILE, data)
-        rerun_app()  # Single rerun at the end
+        rerun_app()
         st.success("All selected court results processed!")
     else:
         st.warning("No winners selected for any courts.")
