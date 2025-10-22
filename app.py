@@ -51,21 +51,14 @@ def initialize_queue():
     rerun_app()
 
 def assign_court_with_unique_matchups(court_index):
-    # Current winners staying on court
     staying = [p for p in data["courts"][court_index] if data["streaks"].get(p,0) > 0 and data["streaks"].get(p,0) < 2]
-
-    # Eligible queue players (haven't reached max 2 consecutive games)
     eligible_queue = [p for p in data["queue"] if data["streaks"].get(p,0) < 2]
 
-    # Need at least 4 players total
     if len(staying) + len(eligible_queue) < 4:
         st.warning(f"Not enough eligible players for court {court_index+1}.")
         return
 
-    # Take up to 4-len(staying) from queue
     candidates = staying + eligible_queue[:4-len(staying)]
-
-    # Best split scoring for unique matchups
     best_split = None
     best_score = -1
     for perm in permutations(candidates):
@@ -95,10 +88,8 @@ def assign_court_with_unique_matchups(court_index):
             best_score = score
             best_split = (team1, team2)
 
-    # Assign court
     data["courts"][court_index] = best_split[0] + best_split[1]
 
-    # Update match_history_pairs
     for team, opponents in [(best_split[0], best_split[1]), (best_split[1], best_split[0])]:
         for t in team:
             if t not in data["match_history_pairs"]:
@@ -110,7 +101,6 @@ def assign_court_with_unique_matchups(court_index):
                 if opponent not in data["match_history_pairs"][t]["against"]:
                     data["match_history_pairs"][t]["against"].append(opponent)
 
-    # Remove assigned players from queue
     for p in data["courts"][court_index]:
         if p in data["queue"]:
             data["queue"].remove(p)
@@ -130,29 +120,23 @@ def process_court_result(court_index, winning_team, rerun=True):
     winners = court[:2] if winning_team == "Team 1" else court[2:]
     losers = court[2:] if winning_team == "Team 1" else court[:2]
 
-    # Update streaks
-    for w in winners:
-        data["streaks"][w] = data["streaks"].get(w, 0) + 1
-    for l in losers:
-        data["streaks"][l] = 0
-
-    # Track staying and leaving players
     staying = []
     leaving_winners = []
     leaving_losers = []
 
     for w in winners:
-        if data["streaks"][w] < 3:
+        streak = data["streaks"].get(w,0)
+        if streak < 2:
             staying.append(w)
+            data["streaks"][w] = streak + 1
         else:
             data["streaks"][w] = 0
             leaving_winners.append(w)
 
     for l in losers:
-        leaving_losers.append(l)
         data["streaks"][l] = 0
+        leaving_losers.append(l)
 
-    # Build new court: split winners into opposing teams
     new_court = []
     if len(staying) == 2:
         team1_partner = data["queue"].pop(0) if data["queue"] else staying[0]
@@ -163,7 +147,6 @@ def process_court_result(court_index, winning_team, rerun=True):
         while len(new_court) < 4 and data["queue"]:
             new_court.append(data["queue"].pop(0))
 
-    # Add leaving losers first, then leaving winners to the back of queue
     for l in leaving_losers + leaving_winners:
         if l not in new_court:
             data["queue"].append(l)
@@ -196,12 +179,10 @@ def reset_streaks():
 st.set_page_config(page_title="🏓 Pickleball Open Play Scheduler", layout="wide")
 st.title("🏓 Pickleball Open Play Scheduler")
 
-# ────────────────────────────── SIDEBAR CONFIG ──────────────────────────────
+# Sidebar config
 with st.sidebar:
     st.header("⚙️ Configuration")
 
-    # Session settings
-    st.write("### Session Settings")
     max_players = st.slider("Max Players", 8, 30, config["max_players"], 1)
     num_courts = st.slider("Number of Courts", 1, 5, config["num_courts"], 1)
     if st.button("💾 Save Config"):
@@ -213,8 +194,6 @@ with st.sidebar:
         rerun_app()
 
     st.divider()
-
-    # Add multiple players
     st.write("### Add Players (one per line)")
     new_players_text = st.text_area("Enter player names:", height=150)
     if st.button("Add / Update Players"):
@@ -248,14 +227,11 @@ with st.sidebar:
     if st.button("🔄 Reset All Player Streaks"):
         reset_streaks()
 
-# ────────────────────────────── DISPLAY QUEUE ──────────────────────────────
+# Display queue
 st.subheader("🎯 Player Queue")
-if data["queue"]:
-    st.write(", ".join(data["queue"]))
-else:
-    st.write("Queue is empty — add players or initialize.")
+st.write(", ".join(data["queue"]) if data["queue"] else "Queue is empty — add players or initialize.")
 
-# ────────────────────────────── DISPLAY COURTS ──────────────────────────────
+# Display courts
 st.subheader("🏟️ Courts")
 cols = st.columns(config["num_courts"])
 
@@ -263,7 +239,6 @@ for i, col in enumerate(cols):
     with col:
         st.markdown(f"### Court {i+1}")
         court = data["courts"][i]
-
         if not court or len(court) < 4:
             st.info("No game assigned or incomplete court.")
         else:
@@ -287,9 +262,7 @@ for i, col in enumerate(cols):
                     st.session_state[key_name] = "None"
                     st.success(f"Court {i+1} result processed!")
 
-# -------------------------
-# Submit All Winners Button
-# -------------------------
+# Submit all winners
 if st.button("Submit All Court Winners"):
     any_selected = False
     for i in range(config["num_courts"]):
@@ -304,7 +277,7 @@ if st.button("Submit All Court Winners"):
         st.success("All court winners processed!")
         rerun_app()
 
-# ────────────────────────────── MATCH HISTORY ──────────────────────────────
+# Match history
 st.subheader("📜 Match History")
 if data["history"]:
     for match in reversed(data["history"][-10:]):
