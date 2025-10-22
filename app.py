@@ -2,7 +2,6 @@ import streamlit as st
 import json
 from pathlib import Path
 import random
-from itertools import permutations
 
 # ────────────────────────────── FILES ──────────────────────────────
 DATA_FILE = Path("pickleball_data.json")
@@ -11,6 +10,7 @@ CONFIG_FILE = Path("pickleball_config.json")
 # ────────────────────────────── DEFAULTS ──────────────────────────────
 DEFAULT_MAX_PLAYERS = 20
 DEFAULT_NUM_COURTS = 3
+MAX_STREAK = 2  # max consecutive games
 
 # ────────────────────────────── HELPERS ──────────────────────────────
 def load_json(path, default):
@@ -36,8 +36,7 @@ data = load_json(DATA_FILE, {
     "queue": [],
     "courts": [[] for _ in range(config["num_courts"])],
     "streaks": {},
-    "history": [],
-    "match_history_pairs": {}
+    "history": []
 })
 
 # ────────────────────────────── LOGIC ──────────────────────────────
@@ -50,66 +49,21 @@ def initialize_queue():
     save_json(DATA_FILE, data)
     rerun_app()
 
-def assign_court_with_unique_matchups(court_index):
-    staying = [p for p in data["courts"][court_index] if data["streaks"].get(p,0) > 0 and data["streaks"].get(p,0) < 2]
-    eligible_queue = [p for p in data["queue"] if data["streaks"].get(p,0) < 2]
-
-    if len(staying) + len(eligible_queue) < 4:
-        st.warning(f"Not enough eligible players for court {court_index+1}.")
-        return
-
-    candidates = staying + eligible_queue[:4-len(staying)]
-    best_split = None
-    best_score = -1
-    for perm in permutations(candidates):
-        team1 = perm[:2]
-        team2 = perm[2:]
-        score = 0
-
-        # Teammate bonus
-        for i in range(2):
-            for j in range(i+1,2):
-                if team1[j] not in data["match_history_pairs"].get(team1[i], {}).get("with", []):
-                    score += 1
-                if team2[j] not in data["match_history_pairs"].get(team2[i], {}).get("with", []):
-                    score += 1
-
-        # Opponent bonus
-        for p1 in team1:
-            for p2 in team2:
-                if p2 not in data["match_history_pairs"].get(p1, {}).get("against", []):
-                    score += 1
-        for p1 in team2:
-            for p2 in team1:
-                if p2 not in data["match_history_pairs"].get(p1, {}).get("against", []):
-                    score += 1
-
-        if score > best_score:
-            best_score = score
-            best_split = (team1, team2)
-
-    data["courts"][court_index] = best_split[0] + best_split[1]
-
-    for team, opponents in [(best_split[0], best_split[1]), (best_split[1], best_split[0])]:
-        for t in team:
-            if t not in data["match_history_pairs"]:
-                data["match_history_pairs"][t] = {"with": [], "against": []}
-            for teammate in team:
-                if teammate != t and teammate not in data["match_history_pairs"][t]["with"]:
-                    data["match_history_pairs"][t]["with"].append(teammate)
-            for opponent in opponents:
-                if opponent not in data["match_history_pairs"][t]["against"]:
-                    data["match_history_pairs"][t]["against"].append(opponent)
-
-    for p in data["courts"][court_index]:
-        if p in data["queue"]:
-            data["queue"].remove(p)
-
 def assign_all_courts():
     for i in range(config["num_courts"]):
-        assign_court_with_unique_matchups(i)
+        assign_court(i)
     save_json(DATA_FILE, data)
     rerun_app()
+
+def assign_court(court_index):
+    # Keep winners with streak < MAX_STREAK
+    staying = [p for p in data["courts"][court_index] if data["streaks"].get(p,0) < MAX_STREAK]
+    
+    # Fill court to 4 players from queue
+    while len(staying) < 4 and data["queue"]:
+        staying.append(data["queue"].pop(0))
+    
+    data["courts"][court_index] = staying
 
 def process_court_result(court_index, winning_team, rerun=True):
     court = data["courts"][court_index]
@@ -117,39 +71,34 @@ def process_court_result(court_index, winning_team, rerun=True):
         st.warning("Not enough players on this court.")
         return
 
+    # Determine winners and losers
     winners = court[:2] if winning_team == "Team 1" else court[2:]
     losers = court[2:] if winning_team == "Team 1" else court[:2]
 
     staying = []
-    leaving_winners = []
-    leaving_losers = []
+    leaving = []
 
+    # Check each winner
     for w in winners:
-        streak = data["streaks"].get(w,0)
-        if streak < 2:
+        streak = data["streaks"].get(w, 0)
+        if streak < MAX_STREAK:
             staying.append(w)
             data["streaks"][w] = streak + 1
         else:
             data["streaks"][w] = 0
-            leaving_winners.append(w)
+            data["queue"].append(w)
+            leaving.append(w)
 
+    # All losers leave
     for l in losers:
         data["streaks"][l] = 0
-        leaving_losers.append(l)
+        data["queue"].append(l)
+        leaving.append(l)
 
-    new_court = []
-    if len(staying) == 2:
-        team1_partner = data["queue"].pop(0) if data["queue"] else staying[0]
-        team2_partner = data["queue"].pop(0) if data["queue"] else staying[1]
-        new_court = [staying[0], team1_partner, team2_partner, staying[1]]
-    else:
-        new_court = staying[:]
-        while len(new_court) < 4 and data["queue"]:
-            new_court.append(data["queue"].pop(0))
-
-    for l in leaving_losers + leaving_winners:
-        if l not in new_court:
-            data["queue"].append(l)
+    # Rebuild court with staying winners + new queue players
+    new_court = staying[:]
+    while len(new_court) < 4 and data["queue"]:
+        new_court.append(data["queue"].pop(0))
 
     data["courts"][court_index] = new_court
     data["history"].append({
@@ -157,8 +106,8 @@ def process_court_result(court_index, winning_team, rerun=True):
         "winners": winners,
         "losers": losers
     })
-    save_json(DATA_FILE, data)
 
+    save_json(DATA_FILE, data)
     if rerun:
         rerun_app()
 
@@ -172,7 +121,7 @@ def reset_streaks():
     for p in data["streaks"]:
         data["streaks"][p] = 0
     save_json(DATA_FILE, data)
-    st.success("All player streaks have been reset to 0.")
+    st.success("All player streaks reset to 0")
     rerun_app()
 
 # ────────────────────────────── UI ──────────────────────────────
@@ -182,9 +131,9 @@ st.title("🏓 Pickleball Open Play Scheduler")
 # Sidebar config
 with st.sidebar:
     st.header("⚙️ Configuration")
-
     max_players = st.slider("Max Players", 8, 30, config["max_players"], 1)
     num_courts = st.slider("Number of Courts", 1, 5, config["num_courts"], 1)
+    
     if st.button("💾 Save Config"):
         config["max_players"] = max_players
         config["num_courts"] = num_courts
@@ -260,7 +209,6 @@ for i, col in enumerate(cols):
                 if st.session_state[key_name] != "None":
                     process_court_result(i, st.session_state[key_name])
                     st.session_state[key_name] = "None"
-                    st.success(f"Court {i+1} result processed!")
 
 # Submit all winners
 if st.button("Submit All Court Winners"):
