@@ -2,6 +2,7 @@ import streamlit as st
 import json
 from pathlib import Path
 import random
+from itertools import permutations
 
 # ────────────────────────────── FILES ──────────────────────────────
 DATA_FILE = Path("pickleball_data.json")
@@ -35,7 +36,8 @@ data = load_json(DATA_FILE, {
     "queue": [],
     "courts": [[] for _ in range(config["num_courts"])],
     "streaks": {},
-    "history": []
+    "history": [],
+    "match_history_pairs": {}
 })
 
 # ────────────────────────────── LOGIC ──────────────────────────────
@@ -48,13 +50,65 @@ def initialize_queue():
     save_json(DATA_FILE, data)
     rerun_app()
 
+def assign_court_with_unique_matchups(court_index):
+    if len(data["queue"]) < 4:
+        st.warning("Not enough players in queue for court assignment.")
+        return
+
+    candidates = data["queue"][:4]
+    best_split = None
+    best_score = -1
+
+    for perm in permutations(candidates):
+        team1 = perm[:2]
+        team2 = perm[2:]
+        score = 0
+
+        # Teammate bonus
+        for i in range(2):
+            for j in range(i+1,2):
+                if team1[j] not in data["match_history_pairs"].get(team1[i], {}).get("with", []):
+                    score += 1
+                if team2[j] not in data["match_history_pairs"].get(team2[i], {}).get("with", []):
+                    score += 1
+
+        # Opponent bonus
+        for p1 in team1:
+            for p2 in team2:
+                if p2 not in data["match_history_pairs"].get(p1, {}).get("against", []):
+                    score += 1
+        for p1 in team2:
+            for p2 in team1:
+                if p2 not in data["match_history_pairs"].get(p1, {}).get("against", []):
+                    score += 1
+
+        if score > best_score:
+            best_score = score
+            best_split = (team1, team2)
+
+    # Assign court
+    data["courts"][court_index] = best_split[0] + best_split[1]
+
+    # Update match_history_pairs
+    for team, opponents in [(best_split[0], best_split[1]), (best_split[1], best_split[0])]:
+        for t in team:
+            if t not in data["match_history_pairs"]:
+                data["match_history_pairs"][t] = {"with": [], "against": []}
+            for teammate in team:
+                if teammate != t and teammate not in data["match_history_pairs"][t]["with"]:
+                    data["match_history_pairs"][t]["with"].append(teammate)
+            for opponent in opponents:
+                if opponent not in data["match_history_pairs"][t]["against"]:
+                    data["match_history_pairs"][t]["against"].append(opponent)
+
+    # Remove assigned players from queue
+    for p in data["courts"][court_index]:
+        if p in data["queue"]:
+            data["queue"].remove(p)
+
 def assign_all_courts():
     for i in range(config["num_courts"]):
-        if len(data["queue"]) < 4:
-            break
-        data["courts"][i] = [data["queue"].pop(0) for _ in range(4)]
-        for p in data["courts"][i]:
-            data["streaks"][p] = 1
+        assign_court_with_unique_matchups(i)
     save_json(DATA_FILE, data)
     rerun_app()
 
