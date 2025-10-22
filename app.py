@@ -82,13 +82,20 @@ def process_court_result(court_index, winning_team, rerun=True):
             data["streaks"][w] = 0
             data["queue"].append(w)
 
-    # Build new court
-    new_court = staying[:]
-    needed = 4 - len(new_court)
-    for _ in range(needed):
-        if data["queue"]:
+    # Build new court: split winners into opposing teams
+    new_court = []
+    if len(staying) == 2:
+        # First winner Team 1, second winner Team 2
+        team1_partner = data["queue"].pop(0) if data["queue"] else staying[0]
+        team2_partner = data["queue"].pop(0) if data["queue"] else staying[1]
+        new_court = [staying[0], team1_partner, team2_partner, staying[1]]
+    else:
+        # Fill from queue if fewer than 2 winners
+        new_court = staying[:]
+        while len(new_court) < 4 and data["queue"]:
             new_court.append(data["queue"].pop(0))
-    # Add losing players to queue
+
+    # Add losing players back to queue if not already on court
     for l in losers:
         if l not in new_court:
             data["queue"].append(l)
@@ -230,6 +237,7 @@ if st.button("Submit All Court Winners"):
     if any_selected:
         save_json(DATA_FILE, data)
         rerun_app()  # Single rerun at the end
+        st.success("All selected court results processed!")
     else:
         st.warning("No winners selected for any courts.")
 
