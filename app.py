@@ -51,14 +51,23 @@ def initialize_queue():
     rerun_app()
 
 def assign_court_with_unique_matchups(court_index):
-    if len(data["queue"]) < 4:
-        st.warning("Not enough players in queue for court assignment.")
+    # Current winners staying on court
+    staying = [p for p in data["courts"][court_index] if data["streaks"].get(p,0) > 0 and data["streaks"].get(p,0) < 2]
+
+    # Eligible queue players (haven't reached max 2 consecutive games)
+    eligible_queue = [p for p in data["queue"] if data["streaks"].get(p,0) < 2]
+
+    # Need at least 4 players total
+    if len(staying) + len(eligible_queue) < 4:
+        st.warning(f"Not enough eligible players for court {court_index+1}.")
         return
 
-    candidates = data["queue"][:4]
+    # Take up to 4-len(staying) from queue
+    candidates = staying + eligible_queue[:4-len(staying)]
+
+    # Best split scoring for unique matchups
     best_split = None
     best_score = -1
-
     for perm in permutations(candidates):
         team1 = perm[:2]
         team2 = perm[2:]
@@ -154,13 +163,10 @@ def process_court_result(court_index, winning_team, rerun=True):
         while len(new_court) < 4 and data["queue"]:
             new_court.append(data["queue"].pop(0))
 
-    # Add leaving losers first, then leaving winners
-    for l in leaving_losers:
+    # Add leaving losers first, then leaving winners to the back of queue
+    for l in leaving_losers + leaving_winners:
         if l not in new_court:
             data["queue"].append(l)
-    for w in leaving_winners:
-        if w not in new_court:
-            data["queue"].append(w)
 
     data["courts"][court_index] = new_court
     data["history"].append({
@@ -295,10 +301,8 @@ if st.button("Submit All Court Winners"):
             any_selected = True
     if any_selected:
         save_json(DATA_FILE, data)
+        st.success("All court winners processed!")
         rerun_app()
-        st.success("All selected court results processed!")
-    else:
-        st.warning("No winners selected for any courts.")
 
 # ────────────────────────────── MATCH HISTORY ──────────────────────────────
 st.subheader("📜 Match History")
